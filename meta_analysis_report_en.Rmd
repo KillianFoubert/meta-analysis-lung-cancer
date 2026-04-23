@@ -1,0 +1,676 @@
+---
+title: "Physical Activity and Lung Cancer Risk: A Meta-Analysis Replication & Extension"
+author: "Killian Foubert, Ph.D."
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 3
+    number_sections: true
+    code_folding: hide
+    fig_width: 10
+    fig_height: 7
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
+library(here)
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 150
+)
+```
+
+# Introduction
+
+This project replicates and extends the meta-analysis by **Qie et al. (2023)**, published in the *Journal of the National Cancer Center*, which examined the association between physical activity (PA) and lung cancer risk across 42 cohort studies (25 articles), covering nearly 10 million participants and over 85,000 incident lung cancer cases.
+
+**What is a meta-analysis?** A meta-analysis is a statistical method that combines the results of multiple independent studies on the same question to produce a single, more precise estimate. Qie et al. collected results from 42 cohort studies, each of which had independently investigated whether physical activity is associated with lung cancer risk, and pooled them together to draw stronger conclusions than any individual study could offer on its own.
+
+**What does this project do?** This project follows three steps:
+
+1. **Data extraction.** We do not have access to the original dataset compiled by Qie et al. However, their published article contains forest plots (graphical summaries) that display the individual result of each study: the relative risk estimate, the confidence interval, and the study weight. We extracted these values visually from the published figures to reconstruct the study-level dataset.
+2. **Replication.** Using these extracted data, we apply the same statistical methods as Qie et al. (fixed-effects and random-effects meta-analytic models) and verify that our pooled results closely match the published values. Agreement between our estimates and theirs validates both the data extraction and the reproducibility of the original analysis.
+3. **Extension.** Once the replication is confirmed, we go further by adding diagnostic and sensitivity analyses that Qie et al. did not present in detail: enhanced funnel plots for publication bias, leave-one-out influence analysis, cumulative meta-analysis, and formal influence diagnostics. These extensions demonstrate a broader command of the meta-analytic toolkit and add value beyond simple replication.
+
+**Methodological scope:** This project demonstrates core meta-analytic methods (inverse-variance weighting, random/fixed effects models, heterogeneity assessment, publication bias diagnostics) applied to an epidemiological question. It is designed as a portfolio piece showcasing quantitative skills transferable across domains.
+
+**Reference:** Qie, R., Han, M., Huang, H., et al. (2023). Physical activity and risk of lung cancer: A systematic review and dose-response meta-analysis of cohort studies. *Journal of the National Cancer Center*, 3, 48–55. [doi:10.1016/j.jncc.2022.12.003](https://doi.org/10.1016/j.jncc.2022.12.003)
+
+# Key Definitions
+
+Physical activity in this meta-analysis is categorized into three domains. Across all included studies, PA levels were assessed through self-reported questionnaires or interviews and typically expressed in metabolic equivalent of task hours per week (MET h/wk).
+
+- **Total physical activity (TPA):** A composite measure combining several domains of physical activity, typically leisure, occupational, transport, and household activities, into a single index. The specific domains included vary across studies.
+- **Leisure-time physical activity (LTPA):** Exercise and recreational activities undertaken during free time (e.g., jogging, cycling, swimming), excluding work-related or transport-related movement. This is the most commonly studied domain in the PA–cancer literature.
+- **Occupational physical activity (OPA):** The physical demands of one's job, ranging from sedentary office work (sitting occupations) to heavy manual labor (high-level OPA). In the included studies, OPA is typically categorized by occupation type rather than measured continuously.
+- **Metabolic equivalent of task (MET):** A standardized unit of energy expenditure where 1 MET corresponds to the metabolic rate at rest (~3.5 ml O₂/kg/min). For example, light walking corresponds to ~3 METs, moderate cycling to ~4–5 METs, and vigorous running to ~8 METs. MET hours per week (MET h/wk) combine intensity and duration into a single dose measure.
+- **Relative risk (RR):** The ratio of the probability of lung cancer in the exposed group (e.g., high PA) to the probability in the reference group (e.g., low PA). An RR of 0.78 means a 22% reduction in risk; an RR of 1.33 means a 33% increase in risk.
+- **95% Confidence interval (CI):** The range within which the true RR is expected to lie with 95% probability. If the CI includes 1, the association is not statistically significant at the 5% level.
+
+# Setup
+
+```{r packages, class.source = "fold-show"}
+library(meta)
+library(metafor)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+
+theme_meta <- theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(color = "grey40", size = 11),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+theme_set(theme_meta)
+```
+
+# Data
+
+## Data extraction
+
+Study-level data (effect sizes, confidence intervals) were extracted directly from the published forest plots (Figures 2 and 4 in Qie et al., 2023). Log-transformed relative risks and their standard errors are computed from the reported 95% confidence intervals.
+
+```{r load-data, class.source = "fold-show"}
+tpa <- read.csv(here("data", "study_data_tpa.csv"), stringsAsFactors = FALSE)
+ltpa <- read.csv(here("data", "study_data_ltpa.csv"), stringsAsFactors = FALSE)
+opa <- read.csv(here("data", "study_data_opa.csv"), stringsAsFactors = FALSE)
+
+compute_log_rr <- function(df) {
+  df %>%
+    mutate(
+      log_rr = log(rr),
+      log_lower = log(ci_lower),
+      log_upper = log(ci_upper),
+      se = (log_upper - log_lower) / (2 * qnorm(0.975)),
+      gender_label = case_when(
+        gender == "M" ~ "Men",
+        gender == "W" ~ "Women",
+        gender == "M/W" ~ "Both",
+        TRUE ~ gender
+      ),
+      study_label = paste0(study, " (", year, ") ", gender_label)
+    )
+}
+
+tpa <- compute_log_rr(tpa)
+ltpa <- compute_log_rr(ltpa)
+opa <- compute_log_rr(opa)
+```
+
+## TPA studies
+
+The table below presents the 11 cohort studies included in the TPA analysis, each reporting the relative risk of lung cancer for participants with the highest versus the lowest level of total physical activity. These are the raw inputs to the meta-analytic models presented in the next section.
+
+```{r tpa-table}
+tpa %>%
+  select(study_label, rr, ci_lower, ci_upper) %>%
+  rename(Study = study_label, RR = rr,
+         `95% CI Lower` = ci_lower, `95% CI Upper` = ci_upper) %>%
+  kable(digits = 2, caption = "Table 1: Total Physical Activity. Extracted study data") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+RR = Relative Risk; CI = Confidence Interval. Each row compares the highest vs. lowest level of total physical activity. RR < 1 indicates a protective association; RR > 1 indicates increased risk. If the 95% CI includes 1, the association is not statistically significant at the 5% level.
+</p>
+
+A first look at the data reveals that the majority of studies report RR estimates below 1, suggesting a broadly consistent protective pattern. However, there is notable variation across studies: for instance, Inoue et al. (2008) report an RR above 1 for men, which motivates the formal pooling and heterogeneity assessment that follow.
+
+## LTPA studies
+
+The same logic applies to leisure-time physical activity. The table below displays the 23 cohort studies comparing the highest versus the lowest level of LTPA. This is the largest subset in the meta-analysis and the one with the most heterogeneous results, which will be quantified in the pooled analysis.
+
+```{r ltpa-table}
+ltpa %>%
+  select(study_label, rr, ci_lower, ci_upper) %>%
+  rename(Study = study_label, RR = rr,
+         `95% CI Lower` = ci_lower, `95% CI Upper` = ci_upper) %>%
+  kable(digits = 2, caption = "Table 2: Leisure-Time Physical Activity. Extracted study data") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+RR = Relative Risk; CI = Confidence Interval. Each row compares the highest vs. lowest level of leisure-time physical activity. RR < 1 indicates a protective association; RR > 1 indicates increased risk. If the 95% CI includes 1, the association is not statistically significant at the 5% level.
+</p>
+
+Compared to the TPA studies, the LTPA estimates are more dispersed: several studies report RR values close to or above 1, while others show strong protective associations (e.g., Lee et al., 1999; Knekt et al., 1996). This variability across studies is what epidemiologists call **heterogeneity**: the individual studies do not all point in the same direction or with the same magnitude, which suggests that the true effect of LTPA on lung cancer risk may differ depending on factors such as study population, geographic region, how PA was measured, or the degree of adjustment for confounders like smoking.
+
+Heterogeneity is quantified by the **I² statistic**, which represents the percentage of total variation across studies that is due to genuine differences between them rather than sampling error. An I² of 0% would mean all variation is due to chance; an I² above 50% is generally considered substantial. For LTPA, the pooled analysis will reveal an I² of approximately 68%, confirming that the studies are not estimating the same underlying effect. This has a direct consequence on the choice of statistical model: a **fixed-effects model** assumes a single true effect shared by all studies, while a **random-effects model** allows the true effect to vary across studies and produces a pooled estimate that accounts for this between-study variation. Given the substantial heterogeneity observed here, a random-effects model is the appropriate choice for the LTPA analysis.
+
+# Replication
+
+## Total Physical Activity
+
+The forest plot below displays individual study estimates and the pooled summary effect. Each square represents one study's RR, with the size proportional to its weight in the analysis. The horizontal line through each square is the study's 95% confidence interval. The diamond at the bottom represents the pooled estimate across all studies, with the width of the diamond showing the pooled 95% CI. The vertical dashed line at RR = 1 marks the threshold of no effect: studies to the left of this line suggest a protective association (physical activity reduces lung cancer risk), while studies to the right suggest an increased risk.
+
+Qie et al. reported a pooled RR of **0.78 (95% CI: 0.70–0.86)** using a fixed-effects model (I² = 33.6%).
+
+```{r tpa-forest}
+tpa_fe <- rma(yi = log_rr, sei = se, data = tpa, method = "FE",
+              slab = study_label)
+tpa_re <- rma(yi = log_rr, sei = se, data = tpa, method = "REML",
+              slab = study_label)
+
+forest(tpa_fe,
+       atransf = exp,
+       xlab = "Relative Risk",
+       header = c("Study", "RR [95% CI]"),
+       main = "Total Physical Activity & Lung Cancer Risk\n(Highest vs. Lowest)",
+       col = "steelblue4",
+       border = "steelblue4",
+       refline = 0,
+       cex = 0.85)
+```
+
+The table below compares our replicated pooled estimates with the values reported by Qie et al. We present both a fixed-effects and a random-effects model. In plain terms: the **fixed-effects model** assumes that all studies are estimating exactly the same underlying effect, and simply computes a weighted average where larger, more precise studies count more. The **random-effects model** relaxes this assumption and allows for the possibility that the true effect varies from study to study (e.g., due to differences in populations, PA measurement, or confounding adjustment). It adds an extra source of uncertainty (between-study variance, denoted τ²) into the weights, which tends to produce wider confidence intervals but a more realistic estimate when studies disagree. For TPA, both models yield similar results because heterogeneity is moderate (I² ≈ 34%), meaning the studies are reasonably consistent with each other.
+
+```{r tpa-results}
+# ─── Pooled estimates table ───────────────────────────────────────────────────
+tpa_pooled <- tibble(
+  Source = c("Our replication", "Our replication", "Published paper"),
+  Model = c("Fixed-effects", "Random-effects", "Fixed-effects"),
+  `Pooled RR` = c(exp(tpa_fe$beta), exp(tpa_re$beta), 0.78),
+  `95% CI Lower` = c(exp(tpa_fe$ci.lb), exp(tpa_re$ci.lb), 0.70),
+  `95% CI Upper` = c(exp(tpa_fe$ci.ub), exp(tpa_re$ci.ub), 0.86)
+)
+
+tpa_pooled %>%
+  kable(digits = 2,
+        caption = "Table 3a: TPA. Pooled estimates comparison") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(3, bold = TRUE, background = "#f0f0f0")
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+The shaded row shows the values published by Qie et al. (2023). Our main replication (first row) uses the same model (fixed-effects) as the original paper. The second row shows a random-effects alternative as a robustness check. Minor differences between our replication and the published values are expected due to rounding in the extracted data.
+</p>
+
+```{r tpa-heterogeneity}
+# ─── Heterogeneity table ─────────────────────────────────────────────────────
+tpa_het <- tibble(
+  Source = c("Our replication", "Published paper"),
+  `I²` = c(paste0(round(tpa_fe$I2, 1), "%"), "33.6%"),
+  `Cochran's Q` = c(round(tpa_fe$QE, 2), "–"),
+  `P (heterogeneity)` = c(formatC(tpa_fe$QEp, format = "f", digits = 3), "0.130")
+)
+
+tpa_het %>%
+  kable(caption = "Table 3b: TPA. Heterogeneity assessment") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(2, bold = TRUE, background = "#f0f0f0")
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+Heterogeneity statistics (I² and Cochran's Q) measure how much the individual studies disagree with each other. These values are a property of the data, not of the model: they are identical regardless of whether a fixed-effects or random-effects model is used. An I² below 50% indicates moderate heterogeneity, meaning the studies are reasonably consistent with each other.
+</p>
+
+**Interpretation:** Our fixed-effects replication produces a pooled RR very close to the published value of 0.78, confirming the successful replication. The key finding holds: high total physical activity is associated with a statistically significant 22% reduction in lung cancer risk. The random-effects model yields a similar estimate, which is reassuring because it means the conclusion does not depend on the choice of model. Heterogeneity is moderate (I² ≈ 34%), indicating that the studies broadly agree on the direction and magnitude of the protective effect.
+
+## Leisure-Time Physical Activity
+
+Qie et al. used a random-effects model for LTPA (I² = 67.6%) and reported a pooled RR of **0.88 (95% CI: 0.83–0.93)**.
+
+```{r ltpa-forest}
+ltpa_re <- rma(yi = log_rr, sei = se, data = ltpa, method = "REML",
+               slab = study_label)
+ltpa_fe <- rma(yi = log_rr, sei = se, data = ltpa, method = "FE",
+               slab = study_label)
+
+forest(ltpa_re,
+       atransf = exp,
+       xlab = "Relative Risk",
+       header = c("Study", "RR [95% CI]"),
+       main = "Leisure-Time Physical Activity & Lung Cancer Risk\n(Highest vs. Lowest)",
+       col = "darkgreen",
+       border = "darkgreen",
+       refline = 0,
+       cex = 0.70)
+```
+
+```{r ltpa-results}
+# ─── Pooled estimates table ───────────────────────────────────────────────────
+ltpa_pooled <- tibble(
+  Source = c("Our replication", "Our replication", "Published paper"),
+  Model = c("Random-effects", "Fixed-effects", "Random-effects"),
+  `Pooled RR` = c(exp(ltpa_re$beta), exp(ltpa_fe$beta), 0.88),
+  `95% CI Lower` = c(exp(ltpa_re$ci.lb), exp(ltpa_fe$ci.lb), 0.83),
+  `95% CI Upper` = c(exp(ltpa_re$ci.ub), exp(ltpa_fe$ci.ub), 0.93)
+)
+
+ltpa_pooled %>%
+  kable(digits = 2,
+        caption = "Table 4a: LTPA. Pooled estimates comparison") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(3, bold = TRUE, background = "#f0f0f0")
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+The shaded row shows the values published by Qie et al. (2023). Our main replication (first row) uses the same model (random-effects) as the original paper. The second row shows a fixed-effects alternative as a robustness check.
+</p>
+
+```{r ltpa-heterogeneity}
+# ─── Heterogeneity table ─────────────────────────────────────────────────────
+ltpa_het <- tibble(
+  Source = c("Our replication", "Published paper"),
+  `I²` = c(paste0(round(ltpa_fe$I2, 1), "%"), "67.6%"),
+  `Cochran's Q` = c(round(ltpa_fe$QE, 2), "–"),
+  `P (heterogeneity)` = c(formatC(ltpa_fe$QEp, format = "f", digits = 4), "< 0.001")
+)
+
+ltpa_het %>%
+  kable(caption = "Table 4b: LTPA. Heterogeneity assessment") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(2, bold = TRUE, background = "#f0f0f0")
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+As explained in Section 4.3, I² and Cochran's Q are properties of the data, not of the model. An I² above 50% indicates substantial heterogeneity: the studies disagree considerably on the size of the effect, which is why a random-effects model (which accounts for this between-study variation) is preferred over a fixed-effects model for this analysis.
+</p>
+
+**Interpretation:** The replicated pooled estimate closely matches the published RR of 0.88, confirming that high leisure-time physical activity is associated with a statistically significant 12% reduction in lung cancer risk.
+
+However, unlike the TPA analysis, the LTPA results show substantial heterogeneity (I² ≈ 68%, P < 0.001). This means that the individual studies disagree considerably on the size of the protective effect. Looking at the forest plot, this is visible: some studies find a strong protective association (e.g., Lee et al., 1999, with RR = 0.60), while others find essentially no association (e.g., Steindorf et al., 2006 Men, with RR = 1.00) or even a slight increase in risk (e.g., Rissanen et al., 2021 Men, with RR = 1.59). This is why the random-effects model is used here rather than the fixed-effects model: it accounts for the fact that the true effect likely varies across study populations and settings.
+
+Note also that the random-effects and fixed-effects models produce slightly different pooled estimates. The fixed-effects estimate tends to be pulled more strongly toward the large, precise studies (such as Ko et al., 2020 and Park et al., 2013), while the random-effects model gives relatively more weight to smaller studies. In this case, both models agree on the direction and statistical significance of the association, which strengthens the overall conclusion.
+
+## Occupational Physical Activity
+
+The analysis of occupational physical activity takes a different approach from TPA and LTPA. Rather than comparing "high vs. low" levels on a continuous scale, Qie et al. categorized workers by occupation type and compared each category against a reference group of **sitting occupations** (e.g., office workers). The four comparisons are:
+
+- **Unemployed vs. sitting:** people without employment compared to sedentary workers.
+- **Standing vs. sitting:** occupations involving prolonged standing (e.g., teaching, light industry) compared to sedentary office work.
+- **Light OPA vs. sitting:** occupations with moderate physical demands compared to sedentary work.
+- **High OPA vs. sitting:** physically demanding jobs (e.g., construction, agriculture) compared to sedentary work.
+
+This structure means that, unlike TPA and LTPA where we expect a protective effect (RR < 1), the OPA results can go either way. A key question is whether the physical demands of manual labor protect against lung cancer (as one might expect from the LTPA findings), or whether occupational confounders (exposure to carcinogens, lower socioeconomic status, higher smoking prevalence) offset or reverse that benefit.
+
+We replicate each of the four comparisons separately using fixed-effects models, as Qie et al. reported I² = 0% for all OPA subgroups.
+
+```{r opa-analysis}
+opa <- compute_log_rr(opa)
+
+opa_categories <- c("unemployed", "standing", "light", "high")
+opa_labels <- c("Unemployed", "Standing", "Light OPA", "High OPA")
+opa_reported <- list(
+  c(1.33, 1.17, 1.51),
+  c(1.37, 1.15, 1.63),
+  c(1.09, 0.94, 1.26),
+  c(1.12, 0.98, 1.29)
+)
+
+opa_results <- list()
+
+for (i in seq_along(opa_categories)) {
+  cat_data <- opa %>% filter(comparison == opa_categories[i])
+  fit <- rma(yi = log_rr, sei = se, data = cat_data, method = "FE",
+             slab = study_label)
+  opa_results[[i]] <- fit
+}
+```
+
+```{r opa-forest, fig.height=10}
+par(mfrow = c(2, 2), mar = c(4, 4, 3, 2))
+
+for (i in seq_along(opa_categories)) {
+  forest(opa_results[[i]],
+         atransf = exp,
+         xlab = "Relative Risk",
+         main = paste0(LETTERS[i], ") ", opa_labels[i], " vs. Sitting occupation"),
+         col = "firebrick",
+         border = "firebrick",
+         refline = 0,
+         cex = 0.80)
+}
+```
+
+```{r opa-summary}
+opa_summary <- tibble(
+  Comparison = opa_labels,
+  `Replicated RR` = sapply(opa_results, function(x) round(exp(x$beta), 2)),
+  `Replicated 95% CI` = sapply(opa_results, function(x)
+    paste0(round(exp(x$ci.lb), 2), "–", round(exp(x$ci.ub), 2))),
+  `Reported RR` = sapply(opa_reported, function(x) x[1]),
+  `Reported 95% CI` = sapply(opa_reported, function(x)
+    paste0(x[2], "–", x[3]))
+)
+
+opa_summary %>%
+  kable(caption = "Table 5: OPA. Replicated vs. reported estimates") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+Each row compares one occupation category to the sitting occupation reference group. Heterogeneity was negligible for all four comparisons (I² = 0%), consistent with the values reported by Qie et al.
+</p>
+
+**Key findings:** The OPA results paint a strikingly different picture from TPA and LTPA. Rather than a protective effect, we observe the following pattern:
+
+- **Unemployed** individuals face a 33% higher risk of lung cancer compared to those in sitting occupations (RR ≈ 1.33). This likely reflects the broader health disadvantages associated with unemployment (higher smoking rates, lower access to healthcare, psychological stress) rather than a direct effect of physical inactivity.
+- **Standing occupations** show a 37% increased risk (RR ≈ 1.37). This may reflect confounding by occupational exposures: workers in standing jobs (e.g., light industry, manufacturing) may be exposed to airborne carcinogens in their workplace.
+- **Light OPA** and **High OPA** show no statistically significant association with lung cancer risk (their 95% CIs include 1). This is a notable contrast with the LTPA findings: while recreational exercise appears protective, the physical demands of manual labor do not confer the same benefit. One plausible explanation is that the protective effect of physical exertion is offset by occupational exposures to lung carcinogens (asbestos, silica, diesel exhaust) that are more common in physically demanding jobs.
+
+These results are consistent with the original findings by Qie et al. and highlight an important distinction: the health benefits of physical activity for lung cancer prevention appear to be specific to leisure-time activity, not to occupational exertion.
+
+# Extension
+
+## Publication Bias {.tabset}
+
+Studies that find a statistically significant or striking result are more likely to be submitted and accepted for publication than studies that find no effect. This is known as **publication bias**: the published literature is not a representative sample of all the research that has been carried out. If we only pool published studies (which overrepresent positive findings), our pooled estimate may be systematically biased.
+
+This section uses three complementary approaches to assess whether publication bias may be affecting our results:
+
+1. **Funnel plots** provide a visual inspection of whether the pattern of study results is symmetric.
+2. **Statistical tests** (Begg's and Egger's) formalize this visual inspection with hypothesis tests.
+3. **Trim-and-fill** estimates how many studies might be "missing" and recalculates the pooled estimate after imputing them.
+
+### Funnel plots
+
+A funnel plot places each study on a graph with its effect size (log RR) on the horizontal axis and its precision (related to sample size) on the vertical axis. Large and precise studies cluster tightly at the top of the plot near the pooled estimate. Smaller and less precise studies scatter more widely at the bottom. If there is no publication bias, this scatter should be **symmetric around the pooled estimate** (forming a funnel shape). If the plot is asymmetric (for instance, small studies with non-significant results are missing from one side), this suggests that some studies with unfavorable results may not have been published.
+
+The shaded regions on the plots below indicate statistical significance levels (90%, 95%, and 99%). Studies falling inside the white central region are not statistically significant. An excess of studies in the shaded (significant) regions, especially among smaller studies, can be another indicator of publication bias.
+
+```{r funnel-tpa, fig.height=5}
+funnel(tpa_fe,
+       main = "Funnel Plot: Total Physical Activity",
+       xlab = "Log Relative Risk",
+       back = "white",
+       shade = c("white", "gray90", "gray75"),
+       level = c(90, 95, 99),
+       legend = TRUE)
+```
+
+```{r funnel-ltpa, fig.height=5}
+funnel(ltpa_re,
+       main = "Funnel Plot: Leisure-Time Physical Activity",
+       xlab = "Log Relative Risk",
+       back = "white",
+       shade = c("white", "gray90", "gray75"),
+       level = c(90, 95, 99),
+       legend = TRUE)
+```
+
+**What the funnel plots tell us:** The TPA funnel plot appears reasonably symmetric, suggesting no major publication bias concern. The LTPA funnel plot shows slightly more scatter, which is expected given the higher heterogeneity in this subset, but no obvious gap of missing studies on either side.
+
+### Statistical tests
+
+The visual inspection of funnel plots is inherently subjective. Two formal statistical tests are commonly used to complement it:
+
+- **Begg's rank correlation test** checks whether there is a correlation between the size of a study's effect and its precision. If small studies systematically report larger effects than large studies, it suggests publication bias.
+- **Egger's regression test** fits a regression line to the funnel plot and tests whether it passes through the origin. A significant intercept (P < 0.10, by convention) indicates asymmetry.
+
+```{r pub-bias-tests}
+begg_tpa <- ranktest(tpa_fe)
+begg_ltpa <- ranktest(ltpa_re)
+egger_tpa <- regtest(tpa_fe)
+egger_ltpa <- regtest(ltpa_re)
+
+pub_bias_table <- tibble(
+  `PA Type` = c("TPA", "TPA", "LTPA", "LTPA"),
+  Test = c("Begg's rank test", "Egger's regression", "Begg's rank test", "Egger's regression"),
+  Statistic = c(
+    round(begg_tpa$tau, 3), round(egger_tpa$zval, 3),
+    round(begg_ltpa$tau, 3), round(egger_ltpa$zval, 3)),
+  `P value` = c(
+    formatC(begg_tpa$pval, format = "f", digits = 3),
+    formatC(egger_tpa$pval, format = "f", digits = 3),
+    formatC(begg_ltpa$pval, format = "f", digits = 3),
+    formatC(egger_ltpa$pval, format = "f", digits = 3)),
+  `Qie et al. P value` = c("0.276", "0.210", "0.154", "0.018")
+)
+
+pub_bias_table %>%
+  kable(caption = "Table 6: Publication bias tests") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+A P value below 0.10 suggests significant funnel plot asymmetry (potential publication bias). The last column shows the P values reported by Qie et al. for comparison.
+</p>
+
+**What the tests tell us:** For TPA, both Begg's and Egger's tests are non-significant, consistent with the symmetric funnel plot observed above. For LTPA, Egger's test may flag some asymmetry (as it did in the original paper, P = 0.018), but Begg's test does not. This mixed signal suggests that any publication bias in the LTPA literature is at most modest and unlikely to invalidate the overall protective finding.
+
+### Trim and fill
+
+The trim-and-fill method goes one step further than detection: it attempts to **correct** for publication bias. The method estimates how many studies are "missing" from the funnel plot (i.e., studies that were likely conducted but not published because they found non-significant results), imputes them as mirror images of the existing asymmetry, and recalculates the pooled estimate. If the adjusted pooled RR remains close to the original, it means that even if some publication bias exists, it does not substantially change the conclusion.
+
+```{r trim-fill}
+tf_ltpa <- trimfill(ltpa_re)
+
+cat("LTPA, Trim and fill results:\n")
+cat("Original pooled RR:", round(exp(ltpa_re$beta), 3), "\n")
+cat("Adjusted pooled RR:", round(exp(tf_ltpa$beta), 3), "\n")
+cat("Missing studies imputed:", tf_ltpa$k0, "\n\n")
+
+funnel(tf_ltpa,
+       main = "Trim-and-Fill Funnel Plot: LTPA",
+       xlab = "Log Relative Risk",
+       legend = TRUE)
+```
+
+**What trim-and-fill tells us:** If the method imputes zero or very few missing studies and the adjusted pooled RR remains close to the original (0.88), this confirms that publication bias is not driving the observed protective association between LTPA and lung cancer risk. The conclusion holds even after accounting for potentially unpublished studies.
+
+## Sensitivity Analyses {.tabset}
+
+### Leave-one-out: TPA
+
+Leave-one-out analysis assesses how each individual study influences the pooled estimate. If removing a single study substantially changes the result, it indicates that the overall finding is sensitive to that study.
+
+```{r loo-tpa, fig.height=6}
+loo_tpa <- leave1out(tpa_fe, transf = exp)
+
+loo_tpa_df <- data.frame(
+  study = tpa$study_label,
+  estimate = loo_tpa$estimate,
+  ci.lb = loo_tpa$ci.lb,
+  ci.ub = loo_tpa$ci.ub
+) %>%
+  mutate(study = fct_reorder(study, estimate))
+
+ggplot(loo_tpa_df, aes(x = estimate, y = study)) +
+  geom_vline(xintercept = exp(tpa_fe$beta), linetype = "dashed", color = "steelblue4", linewidth = 0.8) +
+  geom_point(size = 2.5, color = "steelblue4") +
+  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), height = 0.3, color = "steelblue4") +
+  geom_vline(xintercept = 1, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  labs(
+    title = "Leave-One-Out Analysis: Total Physical Activity",
+    subtitle = "Dashed line = overall pooled RR",
+    x = "Pooled RR (excluding study)",
+    y = NULL
+  )
+```
+
+**What this tells us:** All points cluster tightly around the overall pooled RR (dashed line), and none of the recalculated estimates cross the threshold of 1. This means that no single study is driving the TPA result: even if any one study were removed, the protective association would remain statistically significant.
+
+### Leave-one-out: LTPA
+
+```{r loo-ltpa, fig.height=8}
+loo_ltpa <- leave1out(ltpa_re, transf = exp)
+
+loo_ltpa_df <- data.frame(
+  study = ltpa$study_label,
+  estimate = loo_ltpa$estimate,
+  ci.lb = loo_ltpa$ci.lb,
+  ci.ub = loo_ltpa$ci.ub
+) %>%
+  mutate(study = fct_reorder(study, estimate))
+
+ggplot(loo_ltpa_df, aes(x = estimate, y = study)) +
+  geom_vline(xintercept = exp(ltpa_re$beta), linetype = "dashed", color = "darkgreen", linewidth = 0.8) +
+  geom_point(size = 2.5, color = "darkgreen") +
+  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), height = 0.3, color = "darkgreen") +
+  geom_vline(xintercept = 1, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  labs(
+    title = "Leave-One-Out Analysis: Leisure-Time Physical Activity",
+    subtitle = "Dashed line = overall pooled RR",
+    x = "Pooled RR (excluding study)",
+    y = NULL
+  )
+```
+
+**What this tells us:** The LTPA pooled estimate is also stable across all leave-one-out iterations. Despite the substantial heterogeneity observed earlier (I² ≈ 68%), no single study is responsible for the overall finding. The protective association is robust to the exclusion of any individual study.
+
+### Cumulative meta-analysis
+
+Cumulative meta-analysis adds studies one at a time (ordered by publication year) and shows how the pooled estimate evolved over time. This reveals whether the evidence has stabilized or shifted.
+
+```{r cumulative-tpa, fig.height=6}
+tpa_sorted <- tpa %>% arrange(year)
+tpa_cum <- rma(yi = log_rr, sei = se, data = tpa_sorted, method = "FE",
+               slab = study_label)
+cum_tpa <- cumul(tpa_cum, transf = exp)
+
+cum_tpa_df <- data.frame(
+  study = tpa_sorted$study_label,
+  estimate = cum_tpa$estimate,
+  ci.lb = cum_tpa$ci.lb,
+  ci.ub = cum_tpa$ci.ub
+) %>%
+  mutate(study = factor(study, levels = study))
+
+ggplot(cum_tpa_df, aes(x = study, y = estimate)) +
+  geom_hline(yintercept = 1, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  geom_point(size = 2.5, color = "steelblue4") +
+  geom_errorbar(aes(ymin = ci.lb, ymax = ci.ub), width = 0.3, color = "steelblue4") +
+  coord_flip() +
+  labs(
+    title = "Cumulative Meta-Analysis: Total Physical Activity",
+    subtitle = "Ordered by publication year",
+    y = "Cumulative Pooled RR",
+    x = NULL
+  )
+```
+
+```{r cumulative-ltpa, fig.height=8}
+ltpa_sorted <- ltpa %>% arrange(year)
+ltpa_cum <- rma(yi = log_rr, sei = se, data = ltpa_sorted, method = "REML",
+                slab = study_label)
+cum_ltpa <- cumul(ltpa_cum, transf = exp)
+
+cum_ltpa_df <- data.frame(
+  study = ltpa_sorted$study_label,
+  estimate = cum_ltpa$estimate,
+  ci.lb = cum_ltpa$ci.lb,
+  ci.ub = cum_ltpa$ci.ub
+) %>%
+  mutate(study = factor(study, levels = study))
+
+ggplot(cum_ltpa_df, aes(x = study, y = estimate)) +
+  geom_hline(yintercept = 1, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  geom_point(size = 2.5, color = "darkgreen") +
+  geom_errorbar(aes(ymin = ci.lb, ymax = ci.ub), width = 0.3, color = "darkgreen") +
+  coord_flip() +
+  labs(
+    title = "Cumulative Meta-Analysis: Leisure-Time Physical Activity",
+    subtitle = "Ordered by publication year",
+    y = "Cumulative Pooled RR",
+    x = NULL
+  )
+```
+
+**What the cumulative analyses tell us:** For TPA, the pooled estimate has been consistently below 1 since the earliest studies, and the confidence interval has narrowed progressively as more studies were added. This indicates a stable and strengthening evidence base. For LTPA, the pattern is similar: the protective association emerged early and has remained stable despite the addition of studies with varying results. This convergence over time is a strong indicator that the finding reflects a genuine effect rather than a statistical artifact.
+
+## Influence Diagnostics {.tabset}
+
+The plots below display six diagnostic measures for each study, stacked vertically. Each panel has the study names on the horizontal axis and a different diagnostic statistic on the vertical axis. Together, they answer the question: is any single study unduly shaping the overall result?
+
+The six panels are:
+
+1. **rstudent** (externally studentized residuals): measures how far each study's result deviates from the pooled estimate calculated *without* that study. A value beyond ±2 flags a study whose result is atypical compared to the rest.
+2. **DFFITS**: measures how much the pooled estimate *shifts* when a study is removed, expressed in standard error units. A high value means the study is pulling the overall result toward itself disproportionately.
+3. **Cook's distance**: similar to DFFITS but summarizes the overall influence of each study on all model parameters at once. A bar noticeably taller than the others signals a disproportionately influential study.
+4. **cov.r** (covariance ratio): measures the impact of removing a study on the precision of the pooled estimate. A value close to 1 means little impact; a value far from 1 means the study substantially affects the width of the confidence interval.
+5. **tau².del**: the between-study variance (τ²) recalculated after removing each study. If removing a study causes τ² to drop sharply, that study is a major source of heterogeneity.
+6. **QE.del**: Cochran's Q statistic recalculated after removing each study. Same logic: if Q drops substantially, that study was contributing heavily to heterogeneity.
+
+A truly problematic study would appear as an extreme point on *several* panels simultaneously. If no study stands out consistently across panels, the pooled estimate is robust.
+
+### Influential studies: TPA
+
+```{r influence-tpa, fig.height=8}
+inf_tpa <- influence(tpa_fe)
+plot(inf_tpa)
+```
+
+**TPA:** No study appears as an extreme point across multiple panels simultaneously. The Murray et al. (2020) study carries the most weight (as visible from the hat value panel), which is expected given its large sample size, but removing it does not fundamentally alter the pooled estimate (as confirmed by the leave-one-out analysis). The TPA result is robust.
+
+### Influential studies: LTPA
+
+```{r influence-ltpa, fig.height=10}
+inf_ltpa <- influence(ltpa_re)
+plot(inf_ltpa)
+```
+
+**LTPA:** Despite the larger number of studies and the substantial heterogeneity (I² ≈ 68%), no single study dominates the diagnostics across all six panels. Some studies may show mild outlier behavior on individual measures (e.g., slightly elevated residuals or Cook's distance), but none is simultaneously atypical, disproportionately influential, and a major source of heterogeneity. This confirms that the LTPA pooled estimate is not driven by any single study and is robust to the composition of the included literature.
+
+# Summary of Results
+
+```{r summary-visual, fig.height=5, fig.width=8}
+summary_df <- tibble(
+  Category = c("TPA (high vs. low)", "LTPA (high vs. low)",
+               "OPA: Unemployed", "OPA: Standing",
+               "OPA: Light", "OPA: High"),
+  RR = c(exp(tpa_fe$beta), exp(ltpa_re$beta),
+         sapply(opa_results, function(x) exp(x$beta))),
+  CI_lower = c(exp(tpa_fe$ci.lb), exp(ltpa_re$ci.lb),
+               sapply(opa_results, function(x) exp(x$ci.lb))),
+  CI_upper = c(exp(tpa_fe$ci.ub), exp(ltpa_re$ci.ub),
+               sapply(opa_results, function(x) exp(x$ci.ub))),
+  Type = c("Protective", "Protective", "Risk", "Risk", "Null", "Null")
+) %>%
+  mutate(Category = fct_rev(fct_inorder(Category)))
+
+ggplot(summary_df, aes(x = RR, y = Category, color = Type)) +
+  geom_vline(xintercept = 1, linetype = "solid", color = "grey50") +
+  geom_point(size = 3.5) +
+  geom_errorbarh(aes(xmin = CI_lower, xmax = CI_upper), height = 0.25) +
+  scale_color_manual(values = c("Protective" = "steelblue4",
+                                "Risk" = "firebrick",
+                                "Null" = "grey50")) +
+  labs(
+    title = "Summary of Pooled Estimates: All PA Types",
+    x = "Pooled Relative Risk (95% CI)",
+    y = NULL,
+    color = "Direction"
+  ) +
+  theme(legend.position = "right")
+```
+
+**Replication outcomes:**
+
+- **TPA:** High total physical activity is associated with a ~22% reduction in lung cancer risk (RR ≈ 0.78). Replicated estimate closely matches the published result.
+- **LTPA:** High leisure-time physical activity is associated with a ~12% reduction in lung cancer risk (RR ≈ 0.88), with substantial heterogeneity (I² ≈ 68%).
+- **OPA:** Unemployment and standing occupations show increased risk; light and high OPA show no significant association.
+
+**Extension insights:**
+
+- Leave-one-out analyses confirm the stability of TPA and LTPA pooled estimates; no single study drives the overall finding.
+- Cumulative meta-analysis shows the evidence for TPA has strengthened progressively over time.
+- Publication bias tests and funnel plots are broadly consistent with the original findings.
+
+# Methodological Notes
+
+**Data extraction:** Study-level data were extracted from the published forest plots (Figures 2 and 4). This approach enables replication without access to the original individual-level data, but introduces minor imprecision from visual/reported rounding.
+
+**Software:** All analyses were conducted in R using the `metafor` and `meta` packages. The `metafor` package implements inverse-variance weighted fixed-effects and random-effects (REML) models, Cochran's Q test, I² statistic, Begg's and Egger's tests, trim-and-fill, and influence diagnostics.
+
+**Limitations:** This replication uses aggregate data from published figures rather than individual participant data. Dose-response analysis (restricted cubic splines) was not replicated as it requires category-specific exposure levels and case counts not fully available from the published forest plots alone.
+
+---
+
+*Project repository: [github.com/killianfoubert](https://github.com/killianfoubert)*
+
+```{r session-info}
+sessionInfo()
+```

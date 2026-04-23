@@ -1,0 +1,670 @@
+---
+title: "Activité physique et risque de cancer du poumon : réplication et extension d'une méta-analyse"
+author: "Killian Foubert, Ph.D."
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 3
+    number_sections: true
+    code_folding: hide
+    fig_width: 10
+    fig_height: 7
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
+library(here)
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 150
+)
+```
+
+# Introduction
+
+Ce projet réplique et étend la méta-analyse de **Qie et al. (2023)**, publiée dans le *Journal of the National Cancer Center*, qui examine l'association entre l'activité physique (AP) et le risque de cancer du poumon à travers 42 études de cohorte (25 articles), couvrant près de 10 millions de participants et plus de 85 000 cas incidents de cancer du poumon.
+
+**Qu'est-ce qu'une méta-analyse ?** Une méta-analyse est une méthode statistique qui combine les résultats de plusieurs études indépendantes portant sur la même question pour produire une estimation unique et plus précise. Qie et al. ont collecté les résultats de 42 études de cohorte, chacune ayant examiné de manière indépendante si l'activité physique est associée au risque de cancer du poumon, et les ont combinés pour tirer des conclusions plus solides que celles qu'une étude isolée pourrait offrir.
+
+**Que fait ce projet ?** Ce projet suit trois étapes :
+
+1. **Extraction des données.** Nous n'avons pas accès au jeu de données original compilé par Qie et al. Cependant, leur article publié contient des forest plots (résumés graphiques) qui affichent le résultat individuel de chaque étude : l'estimation du risque relatif, l'intervalle de confiance et le poids de l'étude. Nous avons extrait ces valeurs visuellement à partir des figures publiées pour reconstruire le jeu de données au niveau des études.
+2. **Réplication.** À partir de ces données extraites, nous appliquons les mêmes méthodes statistiques que Qie et al. (modèles méta-analytiques à effets fixes et à effets aléatoires) et vérifions que nos résultats poolés correspondent étroitement aux valeurs publiées. La concordance entre nos estimations et les leurs valide à la fois l'extraction des données et la reproductibilité de l'analyse originale.
+3. **Extension.** Une fois la réplication confirmée, nous allons plus loin en ajoutant des analyses diagnostiques et de sensibilité que Qie et al. n'ont pas présentées en détail : funnel plots améliorés pour le biais de publication, analyse d'influence leave-one-out, méta-analyse cumulative et diagnostics d'influence formels. Ces extensions démontrent une maîtrise plus large de la boîte à outils méta-analytique et apportent une valeur ajoutée au-delà de la simple réplication.
+
+**Portée méthodologique :** Ce projet met en œuvre les méthodes fondamentales de la méta-analyse (pondération par la variance inverse, modèles à effets fixes et aléatoires, évaluation de l'hétérogénéité, diagnostics de biais de publication) appliquées à une question épidémiologique. Il est conçu comme une pièce de portfolio démontrant des compétences quantitatives transférables.
+
+**Référence :** Qie, R., Han, M., Huang, H., et al. (2023). Physical activity and risk of lung cancer: A systematic review and dose-response meta-analysis of cohort studies. *Journal of the National Cancer Center*, 3, 48–55. [doi:10.1016/j.jncc.2022.12.003](https://doi.org/10.1016/j.jncc.2022.12.003)
+
+# Définitions clés
+
+L'activité physique dans cette méta-analyse est catégorisée en trois domaines. Dans toutes les études incluses, les niveaux d'AP ont été évalués par questionnaires auto-déclaratifs ou entretiens et sont typiquement exprimés en équivalents métaboliques par heure et par semaine (MET h/semaine).
+
+- **Activité physique totale (APT) :** Une mesure composite combinant plusieurs domaines d'activité physique, typiquement les loisirs, le travail, les transports et les activités domestiques, en un indice unique. Les domaines spécifiques inclus varient selon les études.
+- **Activité physique de loisir (APL) :** Exercice et activités récréatives pratiqués pendant le temps libre (ex. : jogging, vélo, natation), excluant les mouvements liés au travail ou aux transports. C'est le domaine le plus étudié dans la littérature AP-cancer.
+- **Activité physique professionnelle (APP) :** Les exigences physiques de son emploi, allant du travail de bureau sédentaire (professions assises) au travail manuel lourd (APP élevée). Dans les études incluses, l'APP est typiquement catégorisée par type de profession plutôt que mesurée de manière continue.
+- **Équivalent métabolique (MET) :** Une unité standardisée de dépense énergétique où 1 MET correspond au métabolisme au repos (~3,5 ml O₂/kg/min). Par exemple, la marche légère correspond à ~3 METs, le vélo modéré à ~4-5 METs et la course vigoureuse à ~8 METs. Les MET heures par semaine (MET h/semaine) combinent intensité et durée en une mesure de dose unique.
+- **Risque relatif (RR) :** Le rapport entre la probabilité de cancer du poumon dans le groupe exposé (ex. : AP élevée) et la probabilité dans le groupe de référence (ex. : AP faible). Un RR de 0,78 signifie une réduction du risque de 22 % ; un RR de 1,33 signifie une augmentation du risque de 33 %.
+- **Intervalle de confiance à 95 % (IC) :** L'intervalle dans lequel le vrai RR devrait se situer avec une probabilité de 95 %. Si l'IC inclut 1, l'association n'est pas statistiquement significative au seuil de 5 %.
+
+# Configuration
+
+```{r packages, class.source = "fold-show"}
+library(meta)
+library(metafor)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+
+theme_meta <- theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(color = "grey40", size = 11),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+theme_set(theme_meta)
+```
+
+# Données
+
+## Extraction des données
+
+Les données au niveau des études (tailles d'effet, intervalles de confiance) ont été extraites directement des forest plots publiés (Figures 2 et 4 dans Qie et al., 2023). Les risques relatifs log-transformés et leurs erreurs-types sont calculés à partir des intervalles de confiance à 95 % rapportés.
+
+```{r load-data, class.source = "fold-show"}
+tpa <- read.csv(here("data", "study_data_tpa.csv"), stringsAsFactors = FALSE)
+ltpa <- read.csv(here("data", "study_data_ltpa.csv"), stringsAsFactors = FALSE)
+opa <- read.csv(here("data", "study_data_opa.csv"), stringsAsFactors = FALSE)
+
+compute_log_rr <- function(df) {
+  df %>%
+    mutate(
+      log_rr = log(rr),
+      log_lower = log(ci_lower),
+      log_upper = log(ci_upper),
+      se = (log_upper - log_lower) / (2 * qnorm(0.975)),
+      gender_label = case_when(
+        gender == "M" ~ "Hommes",
+        gender == "W" ~ "Femmes",
+        gender == "M/W" ~ "Mixte",
+        TRUE ~ gender
+      ),
+      study_label = paste0(study, " (", year, ") ", gender_label)
+    )
+}
+
+tpa <- compute_log_rr(tpa)
+ltpa <- compute_log_rr(ltpa)
+opa <- compute_log_rr(opa)
+```
+
+## Études APT
+
+Le tableau ci-dessous présente les 11 études de cohorte incluses dans l'analyse APT, chacune rapportant le risque relatif de cancer du poumon pour les participants ayant le niveau le plus élevé par rapport au niveau le plus faible d'activité physique totale. Ce sont les données d'entrée des modèles méta-analytiques présentés dans la section suivante.
+
+```{r tpa-table}
+tpa %>%
+  select(study_label, rr, ci_lower, ci_upper) %>%
+  rename(Étude = study_label, RR = rr,
+         `IC 95% inf.` = ci_lower, `IC 95% sup.` = ci_upper) %>%
+  kable(digits = 2, caption = "Tableau 1 : Activité physique totale. Données extraites") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+RR = Risque Relatif ; IC = Intervalle de Confiance. Chaque ligne compare le niveau le plus élevé au plus faible d'activité physique totale. RR < 1 indique une association protectrice ; RR > 1 indique un risque accru. Si l'IC à 95 % inclut 1, l'association n'est pas statistiquement significative au seuil de 5 %.
+</p>
+
+Un premier examen des données révèle que la majorité des études rapportent des RR inférieurs à 1, suggérant un schéma protecteur globalement cohérent. Cependant, il existe une variation notable entre les études : par exemple, Inoue et al. (2008) rapportent un RR supérieur à 1 pour les hommes, ce qui motive le pooling formel et l'évaluation de l'hétérogénéité qui suivent.
+
+## Études APL
+
+La même logique s'applique à l'activité physique de loisir. Le tableau ci-dessous affiche les 23 études de cohorte comparant le niveau le plus élevé au plus faible d'APL. C'est le sous-ensemble le plus important de la méta-analyse et celui avec les résultats les plus hétérogènes, ce qui sera quantifié dans l'analyse poolée.
+
+```{r ltpa-table}
+ltpa %>%
+  select(study_label, rr, ci_lower, ci_upper) %>%
+  rename(Étude = study_label, RR = rr,
+         `IC 95% inf.` = ci_lower, `IC 95% sup.` = ci_upper) %>%
+  kable(digits = 2, caption = "Tableau 2 : Activité physique de loisir. Données extraites") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+RR = Risque Relatif ; IC = Intervalle de Confiance. Chaque ligne compare le niveau le plus élevé au plus faible d'activité physique de loisir. RR < 1 indique une association protectrice ; RR > 1 indique un risque accru. Si l'IC à 95 % inclut 1, l'association n'est pas statistiquement significative au seuil de 5 %.
+</p>
+
+Par rapport aux études APT, les estimations APL sont plus dispersées : plusieurs études rapportent des valeurs de RR proches de ou supérieures à 1, tandis que d'autres montrent de fortes associations protectrices (ex. : Lee et al., 1999 ; Knekt et al., 1996). Cette variabilité entre les études est ce que les épidémiologistes appellent l'**hétérogénéité** : les études individuelles ne pointent pas toutes dans la même direction ni avec la même amplitude, ce qui suggère que le véritable effet de l'APL sur le risque de cancer du poumon peut différer selon des facteurs tels que la population étudiée, la région géographique, la méthode de mesure de l'AP, ou le degré d'ajustement pour les facteurs de confusion comme le tabagisme.
+
+L'hétérogénéité est quantifiée par la **statistique I²**, qui représente le pourcentage de la variation totale entre les études qui est due à de véritables différences entre elles plutôt qu'à l'erreur d'échantillonnage. Un I² de 0 % signifierait que toute la variation est due au hasard ; un I² supérieur à 50 % est généralement considéré comme substantiel. Pour l'APL, l'analyse poolée révélera un I² d'environ 68 %, confirmant que les études n'estiment pas le même effet sous-jacent. Cela a une conséquence directe sur le choix du modèle statistique : un **modèle à effets fixes** suppose un effet réel unique partagé par toutes les études, tandis qu'un **modèle à effets aléatoires** permet à l'effet réel de varier entre les études et produit une estimation poolée qui tient compte de cette variation inter-études. Étant donné l'hétérogénéité substantielle observée ici, un modèle à effets aléatoires est le choix approprié pour l'analyse APL.
+
+# Réplication
+
+## Activité physique totale
+
+Le forest plot ci-dessous affiche les estimations individuelles des études et l'effet résumé poolé. Chaque carré représente le RR d'une étude, avec une taille proportionnelle à son poids dans l'analyse. La ligne horizontale à travers chaque carré est l'intervalle de confiance à 95 % de l'étude. Le losange en bas représente l'estimation poolée, avec la largeur du losange montrant l'IC poolé à 95 %. La ligne verticale pointillée à RR = 1 marque le seuil d'absence d'effet : les études à gauche de cette ligne suggèrent une association protectrice (l'activité physique réduit le risque de cancer du poumon), tandis que les études à droite suggèrent un risque accru.
+
+Qie et al. ont rapporté un RR poolé de **0,78 (IC 95 % : 0,70-0,86)** avec un modèle à effets fixes (I² = 33,6 %).
+
+```{r tpa-forest}
+tpa_fe <- rma(yi = log_rr, sei = se, data = tpa, method = "FE",
+              slab = study_label)
+tpa_re <- rma(yi = log_rr, sei = se, data = tpa, method = "REML",
+              slab = study_label)
+
+forest(tpa_fe,
+       atransf = exp,
+       xlab = "Risque relatif",
+       header = c("Étude", "RR [IC 95%]"),
+       main = "Activité physique totale et cancer du poumon\n(Niveau le plus élevé vs. le plus faible)",
+       col = "steelblue4",
+       border = "steelblue4",
+       refline = 0,
+       cex = 0.85)
+```
+
+Le tableau ci-dessous compare nos estimations poolées répliquées avec les valeurs rapportées par Qie et al. Nous présentons à la fois un modèle à effets fixes et un modèle à effets aléatoires. En termes simples : le **modèle à effets fixes** suppose que toutes les études estiment exactement le même effet sous-jacent, et calcule simplement une moyenne pondérée où les études plus grandes et plus précises comptent davantage. Le **modèle à effets aléatoires** assouplit cette hypothèse et permet la possibilité que le véritable effet varie d'une étude à l'autre (ex. : en raison de différences de populations, de mesure de l'AP, ou d'ajustement des facteurs de confusion). Il ajoute une source supplémentaire d'incertitude (la variance inter-études, notée τ²) dans les poids, ce qui tend à produire des intervalles de confiance plus larges mais une estimation plus réaliste lorsque les études sont en désaccord. Pour l'APT, les deux modèles donnent des résultats similaires car l'hétérogénéité est modérée (I² ≈ 34 %), ce qui signifie que les études sont raisonnablement cohérentes entre elles.
+
+```{r tpa-results}
+tpa_pooled <- tibble(
+  Source = c("Notre réplication", "Notre réplication", "Article publié"),
+  Modèle = c("Effets fixes", "Effets aléatoires", "Effets fixes"),
+  `RR poolé` = c(exp(tpa_fe$beta), exp(tpa_re$beta), 0.78),
+  `IC 95% inf.` = c(exp(tpa_fe$ci.lb), exp(tpa_re$ci.lb), 0.70),
+  `IC 95% sup.` = c(exp(tpa_fe$ci.ub), exp(tpa_re$ci.ub), 0.86)
+)
+
+tpa_pooled %>%
+  kable(digits = 2, caption = "Tableau 3a : APT. Comparaison des estimations poolées") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(3, bold = TRUE, background = "#f0f0f0")
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+La ligne grisée montre les valeurs publiées par Qie et al. (2023). Notre réplication principale (première ligne) utilise le même modèle (effets fixes) que l'article original. La deuxième ligne montre une alternative à effets aléatoires comme vérification de robustesse. Des différences mineures entre notre réplication et les valeurs publiées sont attendues en raison des arrondis dans les données extraites.
+</p>
+
+```{r tpa-heterogeneity}
+tpa_het <- tibble(
+  Source = c("Notre réplication", "Article publié"),
+  `I²` = c(paste0(round(tpa_fe$I2, 1), "%"), "33.6%"),
+  `Q de Cochran` = c(round(tpa_fe$QE, 2), "–"),
+  `P (hétérogénéité)` = c(formatC(tpa_fe$QEp, format = "f", digits = 3), "0.130")
+)
+
+tpa_het %>%
+  kable(caption = "Tableau 3b : APT. Évaluation de l'hétérogénéité") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(2, bold = TRUE, background = "#f0f0f0")
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+Les statistiques d'hétérogénéité (I² et Q de Cochran) mesurent à quel point les études individuelles sont en désaccord entre elles. Ces valeurs sont une propriété des données, pas du modèle : elles sont identiques quel que soit le modèle utilisé (effets fixes ou aléatoires). Un I² inférieur à 50 % indique une hétérogénéité modérée, signifiant que les études sont raisonnablement cohérentes entre elles.
+</p>
+
+**Interprétation :** Notre réplication à effets fixes produit un RR poolé très proche de la valeur publiée de 0,78, confirmant la réplication réussie. Le résultat principal tient : un niveau élevé d'activité physique totale est associé à une réduction statistiquement significative de 22 % du risque de cancer du poumon. Le modèle à effets aléatoires donne une estimation similaire, ce qui est rassurant car cela signifie que la conclusion ne dépend pas du choix du modèle. L'hétérogénéité est modérée (I² ≈ 34 %), indiquant que les études s'accordent globalement sur la direction et l'amplitude de l'effet protecteur.
+
+## Activité physique de loisir
+
+Qie et al. ont utilisé un modèle à effets aléatoires pour l'APL (I² = 67,6 %) et ont rapporté un RR poolé de **0,88 (IC 95 % : 0,83-0,93)**.
+
+```{r ltpa-forest}
+ltpa_re <- rma(yi = log_rr, sei = se, data = ltpa, method = "REML",
+               slab = study_label)
+ltpa_fe <- rma(yi = log_rr, sei = se, data = ltpa, method = "FE",
+               slab = study_label)
+
+forest(ltpa_re,
+       atransf = exp,
+       xlab = "Risque relatif",
+       header = c("Étude", "RR [IC 95%]"),
+       main = "Activité physique de loisir et cancer du poumon\n(Niveau le plus élevé vs. le plus faible)",
+       col = "darkgreen",
+       border = "darkgreen",
+       refline = 0,
+       cex = 0.70)
+```
+
+```{r ltpa-results}
+ltpa_pooled <- tibble(
+  Source = c("Notre réplication", "Notre réplication", "Article publié"),
+  Modèle = c("Effets aléatoires", "Effets fixes", "Effets aléatoires"),
+  `RR poolé` = c(exp(ltpa_re$beta), exp(ltpa_fe$beta), 0.88),
+  `IC 95% inf.` = c(exp(ltpa_re$ci.lb), exp(ltpa_fe$ci.lb), 0.83),
+  `IC 95% sup.` = c(exp(ltpa_re$ci.ub), exp(ltpa_fe$ci.ub), 0.93)
+)
+
+ltpa_pooled %>%
+  kable(digits = 2, caption = "Tableau 4a : APL. Comparaison des estimations poolées") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(3, bold = TRUE, background = "#f0f0f0")
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+La ligne grisée montre les valeurs publiées par Qie et al. (2023). Notre réplication principale (première ligne) utilise le même modèle (effets aléatoires) que l'article original. La deuxième ligne montre une alternative à effets fixes comme vérification de robustesse.
+</p>
+
+```{r ltpa-heterogeneity}
+ltpa_het <- tibble(
+  Source = c("Notre réplication", "Article publié"),
+  `I²` = c(paste0(round(ltpa_fe$I2, 1), "%"), "67.6%"),
+  `Q de Cochran` = c(round(ltpa_fe$QE, 2), "–"),
+  `P (hétérogénéité)` = c(formatC(ltpa_fe$QEp, format = "f", digits = 4), "< 0.001")
+)
+
+ltpa_het %>%
+  kable(caption = "Tableau 4b : APL. Évaluation de l'hétérogénéité") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(2, bold = TRUE, background = "#f0f0f0")
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+Comme expliqué dans la section 4.3, I² et Q de Cochran sont des propriétés des données, pas du modèle. Un I² supérieur à 50 % indique une hétérogénéité substantielle : les études sont considérablement en désaccord sur l'amplitude de l'effet, c'est pourquoi un modèle à effets aléatoires (qui tient compte de cette variation inter-études) est préféré au modèle à effets fixes pour cette analyse.
+</p>
+
+**Interprétation :** L'estimation poolée répliquée correspond étroitement au RR publié de 0,88, confirmant qu'un niveau élevé d'activité physique de loisir est associé à une réduction statistiquement significative de 12 % du risque de cancer du poumon.
+
+Cependant, contrairement à l'analyse APT, les résultats APL montrent une hétérogénéité substantielle (I² ≈ 68 %, P < 0,001). Cela signifie que les études individuelles sont considérablement en désaccord sur l'amplitude de l'effet protecteur. En regardant le forest plot, cela est visible : certaines études trouvent une forte association protectrice (ex. : Lee et al., 1999, avec RR = 0,60), tandis que d'autres ne trouvent essentiellement aucune association (ex. : Steindorf et al., 2006 Hommes, avec RR = 1,00) ou même une légère augmentation du risque (ex. : Rissanen et al., 2021 Hommes, avec RR = 1,59). C'est pourquoi le modèle à effets aléatoires est utilisé ici plutôt que le modèle à effets fixes : il tient compte du fait que le véritable effet varie probablement selon les populations et les contextes étudiés.
+
+Notons également que les modèles à effets aléatoires et à effets fixes produisent des estimations poolées légèrement différentes. L'estimation à effets fixes tend à être davantage tirée vers les grandes études précises (comme Ko et al., 2020 et Park et al., 2013), tandis que le modèle à effets aléatoires donne un poids relativement plus important aux petites études. Dans ce cas, les deux modèles s'accordent sur la direction et la significativité statistique de l'association, ce qui renforce la conclusion globale.
+
+## Activité physique professionnelle
+
+L'analyse de l'activité physique professionnelle adopte une approche différente de l'APT et de l'APL. Plutôt que de comparer des niveaux "élevé vs. faible" sur une échelle continue, Qie et al. ont catégorisé les travailleurs par type de profession et comparé chaque catégorie à un groupe de référence de **professions assises** (ex. : employés de bureau). Les quatre comparaisons sont :
+
+- **Chômage vs. assis :** personnes sans emploi comparées aux travailleurs sédentaires.
+- **Debout vs. assis :** professions impliquant une station debout prolongée (ex. : enseignement, industrie légère) comparées au travail de bureau sédentaire.
+- **APP légère vs. assis :** professions avec des exigences physiques modérées comparées au travail sédentaire.
+- **APP élevée vs. assis :** emplois physiquement exigeants (ex. : construction, agriculture) comparés au travail sédentaire.
+
+Cette structure signifie que, contrairement à l'APT et l'APL où l'on s'attend à un effet protecteur (RR < 1), les résultats de l'APP peuvent aller dans les deux sens. Une question clé est de savoir si les exigences physiques du travail manuel protègent contre le cancer du poumon (comme on pourrait le supposer d'après les résultats APL), ou si les facteurs de confusion professionnels (exposition aux carcinogènes, statut socio-économique plus faible, prévalence tabagique plus élevée) annulent ou inversent ce bénéfice.
+
+Nous répliquons chacune des quatre comparaisons séparément en utilisant des modèles à effets fixes, car Qie et al. ont rapporté I² = 0 % pour tous les sous-groupes APP.
+
+```{r opa-analysis}
+opa <- compute_log_rr(opa)
+
+opa_categories <- c("unemployed", "standing", "light", "high")
+opa_labels <- c("Chômage", "Debout", "APP légère", "APP élevée")
+opa_reported <- list(
+  c(1.33, 1.17, 1.51),
+  c(1.37, 1.15, 1.63),
+  c(1.09, 0.94, 1.26),
+  c(1.12, 0.98, 1.29)
+)
+
+opa_results <- list()
+
+for (i in seq_along(opa_categories)) {
+  cat_data <- opa %>% filter(comparison == opa_categories[i])
+  fit <- rma(yi = log_rr, sei = se, data = cat_data, method = "FE",
+             slab = study_label)
+  opa_results[[i]] <- fit
+}
+```
+
+```{r opa-forest, fig.height=10}
+par(mfrow = c(2, 2), mar = c(4, 4, 3, 2))
+
+for (i in seq_along(opa_categories)) {
+  forest(opa_results[[i]],
+         atransf = exp,
+         xlab = "Risque relatif",
+         main = paste0(LETTERS[i], ") ", opa_labels[i], " vs. Profession assise"),
+         col = "firebrick",
+         border = "firebrick",
+         refline = 0,
+         cex = 0.80)
+}
+```
+
+```{r opa-summary}
+opa_summary <- tibble(
+  Comparaison = opa_labels,
+  `RR répliqué` = sapply(opa_results, function(x) round(exp(x$beta), 2)),
+  `IC 95% répliqué` = sapply(opa_results, function(x)
+    paste0(round(exp(x$ci.lb), 2), "–", round(exp(x$ci.ub), 2))),
+  `RR rapporté` = sapply(opa_reported, function(x) x[1]),
+  `IC 95% rapporté` = sapply(opa_reported, function(x)
+    paste0(x[2], "–", x[3]))
+)
+
+opa_summary %>%
+  kable(caption = "Tableau 5 : APP. Estimations répliquées vs. rapportées") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+Chaque ligne compare une catégorie professionnelle au groupe de référence des professions assises. L'hétérogénéité était négligeable pour les quatre comparaisons (I² = 0 %), conformément aux valeurs rapportées par Qie et al.
+</p>
+
+**Résultats clés :** Les résultats APP brossent un tableau radicalement différent de l'APT et de l'APL. Plutôt qu'un effet protecteur, nous observons le schéma suivant :
+
+- Les **chômeurs** font face à un risque 33 % plus élevé de cancer du poumon par rapport aux professions assises (RR ≈ 1,33). Cela reflète probablement les désavantages sanitaires plus larges associés au chômage (taux de tabagisme plus élevés, accès réduit aux soins, stress psychologique) plutôt qu'un effet direct de l'inactivité physique.
+- Les **professions debout** montrent un risque accru de 37 % (RR ≈ 1,37). Cela peut refléter la confusion par les expositions professionnelles : les travailleurs debout (ex. : industrie légère, fabrication) peuvent être exposés à des carcinogènes aéroportés sur leur lieu de travail.
+- L'**APP légère** et l'**APP élevée** ne montrent pas d'association statistiquement significative avec le risque de cancer du poumon (leurs IC à 95 % incluent 1). C'est un contraste notable avec les résultats APL : alors que l'exercice récréatif semble protecteur, les exigences physiques du travail manuel ne confèrent pas le même bénéfice. Une explication plausible est que l'effet protecteur de l'effort physique est compensé par les expositions professionnelles aux carcinogènes pulmonaires (amiante, silice, gaz d'échappement diesel) plus fréquentes dans les emplois physiquement exigeants.
+
+Ces résultats sont cohérents avec les résultats originaux de Qie et al. et soulignent une distinction importante : les bénéfices de l'activité physique pour la prévention du cancer du poumon semblent spécifiques à l'activité de loisir, et non à l'effort professionnel.
+
+# Extension
+
+## Biais de publication {.tabset}
+
+Lorsqu'on réalise une méta-analyse, on combine les résultats d'études publiées. Mais toutes les études menées ne finissent pas par être publiées. Les études qui trouvent un résultat statistiquement significatif ou marquant ont plus de chances d'être soumises et acceptées pour publication que celles qui ne trouvent aucun effet. C'est ce qu'on appelle le **biais de publication** : la littérature publiée n'est pas un échantillon représentatif de toutes les recherches menées. Si l'on ne combine que les études publiées (qui surreprésentent les résultats positifs), notre estimation poolée risque d'être systématiquement biaisée.
+
+Cette section utilise trois approches complémentaires pour évaluer si le biais de publication affecte nos résultats :
+
+1. Les **funnel plots** fournissent une inspection visuelle de la symétrie du schéma des résultats.
+2. Les **tests statistiques** (Begg et Egger) formalisent cette inspection visuelle par des tests d'hypothèse.
+3. Le **trim-and-fill** estime combien d'études pourraient être "manquantes" et recalcule l'estimation poolée après les avoir imputées.
+
+### Funnel plots
+
+Un funnel plot place chaque étude sur un graphique avec sa taille d'effet (log RR) sur l'axe horizontal et sa précision (liée à la taille de l'échantillon) sur l'axe vertical. Les études grandes et précises se regroupent en haut du graphique près de l'estimation poolée. Les études plus petites et moins précises se dispersent plus largement en bas. S'il n'y a pas de biais de publication, cette dispersion devrait être **symétrique autour de l'estimation poolée** (formant un entonnoir). Si le graphique est asymétrique (par exemple, les petites études avec des résultats non significatifs sont absentes d'un côté), cela suggère que certaines études aux résultats défavorables n'ont probablement pas été publiées.
+
+Les régions ombrées sur les graphiques ci-dessous indiquent les niveaux de significativité statistique (90 %, 95 % et 99 %). Les études situées dans la région blanche centrale ne sont pas statistiquement significatives. Un excès d'études dans les régions ombrées (significatives), en particulier parmi les petites études, peut être un autre indicateur de biais de publication.
+
+```{r funnel-tpa, fig.height=5}
+funnel(tpa_fe,
+       main = "Graphique en entonnoir : Activité physique totale",
+       xlab = "Log du risque relatif",
+       back = "white",
+       shade = c("white", "gray90", "gray75"),
+       level = c(90, 95, 99),
+       legend = TRUE)
+```
+
+```{r funnel-ltpa, fig.height=5}
+funnel(ltpa_re,
+       main = "Graphique en entonnoir : Activité physique de loisir",
+       xlab = "Log du risque relatif",
+       back = "white",
+       shade = c("white", "gray90", "gray75"),
+       level = c(90, 95, 99),
+       legend = TRUE)
+```
+
+**Ce que les funnel plots nous apprennent :** Le funnel plot APT apparaît raisonnablement symétrique, ne suggérant pas de biais de publication majeur. Le funnel plot APL montre une dispersion légèrement plus importante, ce qui est attendu compte tenu de l'hétérogénéité plus élevée dans ce sous-ensemble, mais pas de lacune évidente d'études manquantes d'un côté ou de l'autre.
+
+### Tests statistiques
+
+L'inspection visuelle des funnel plots est intrinsèquement subjective. Deux tests statistiques formels sont couramment utilisés pour la compléter :
+
+- Le **test de corrélation de rang de Begg** vérifie s'il existe une corrélation entre la taille de l'effet d'une étude et sa précision. Si les petites études rapportent systématiquement des effets plus importants que les grandes études, cela suggère un biais de publication.
+- Le **test de régression d'Egger** ajuste une droite de régression au funnel plot et teste si elle passe par l'origine. Un intercept significatif (P < 0,10, par convention) indique une asymétrie.
+
+```{r pub-bias-tests}
+begg_tpa <- ranktest(tpa_fe)
+begg_ltpa <- ranktest(ltpa_re)
+egger_tpa <- regtest(tpa_fe)
+egger_ltpa <- regtest(ltpa_re)
+
+pub_bias_table <- tibble(
+  `Type d'AP` = c("APT", "APT", "APL", "APL"),
+  Test = c("Test de rang de Begg", "Régression d'Egger", "Test de rang de Begg", "Régression d'Egger"),
+  Statistique = c(
+    round(begg_tpa$tau, 3), round(egger_tpa$zval, 3),
+    round(begg_ltpa$tau, 3), round(egger_ltpa$zval, 3)),
+  `Valeur P` = c(
+    formatC(begg_tpa$pval, format = "f", digits = 3),
+    formatC(egger_tpa$pval, format = "f", digits = 3),
+    formatC(begg_ltpa$pval, format = "f", digits = 3),
+    formatC(egger_ltpa$pval, format = "f", digits = 3)),
+  `Valeur P Qie et al.` = c("0.276", "0.210", "0.154", "0.018")
+)
+
+pub_bias_table %>%
+  kable(caption = "Tableau 6 : Tests de biais de publication") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+<p style="font-size: 0.85em; color: grey; font-style: italic; margin-top: -5px;">
+Une valeur P inférieure à 0,10 suggère une asymétrie significative du funnel plot (biais de publication potentiel). La dernière colonne montre les valeurs P rapportées par Qie et al. pour comparaison.
+</p>
+
+**Ce que les tests nous apprennent :** Pour l'APT, les tests de Begg et d'Egger sont tous deux non significatifs, cohérents avec le funnel plot symétrique observé ci-dessus. Pour l'APL, le test d'Egger peut signaler une certaine asymétrie (comme dans l'article original, P = 0,018), mais le test de Begg ne le fait pas. Ce signal mixte suggère que tout biais de publication dans la littérature APL est au plus modeste et peu susceptible d'invalider le résultat protecteur global.
+
+### Méthode trim-and-fill
+
+La méthode trim-and-fill va un cran plus loin que la détection : elle tente de **corriger** le biais de publication. La méthode estime combien d'études sont "manquantes" dans le funnel plot (c'est-à-dire des études qui ont probablement été menées mais non publiées parce qu'elles trouvaient des résultats non significatifs), les impute comme images miroir de l'asymétrie existante, et recalcule l'estimation poolée. Si le RR poolé ajusté reste proche de l'original, cela signifie que même si un biais existe, il ne change pas substantiellement la conclusion.
+
+```{r trim-fill}
+tf_ltpa <- trimfill(ltpa_re)
+
+cat("APL, résultats trim-and-fill :\n")
+cat("RR poolé original :", round(exp(ltpa_re$beta), 3), "\n")
+cat("RR poolé ajusté :", round(exp(tf_ltpa$beta), 3), "\n")
+cat("Études manquantes imputées :", tf_ltpa$k0, "\n\n")
+
+funnel(tf_ltpa,
+       main = "Graphique trim-and-fill : APL",
+       xlab = "Log du risque relatif",
+       legend = TRUE)
+```
+
+**Ce que le trim-and-fill nous apprend :** Si la méthode impute zéro ou très peu d'études manquantes et que le RR poolé ajusté reste proche de l'original (0,88), cela confirme que le biais de publication n'est pas à l'origine de l'association protectrice observée entre l'APL et le risque de cancer du poumon. La conclusion tient même après prise en compte d'études potentiellement non publiées.
+
+## Analyses de sensibilité {.tabset}
+
+### Leave-one-out : APT
+
+L'analyse leave-one-out évalue l'influence de chaque étude individuelle sur l'estimation poolée. Si le retrait d'une seule étude modifie substantiellement le résultat, cela indique que le résultat global est sensible à cette étude.
+
+```{r loo-tpa, fig.height=6}
+loo_tpa <- leave1out(tpa_fe, transf = exp)
+
+loo_tpa_df <- data.frame(
+  study = tpa$study_label,
+  estimate = loo_tpa$estimate,
+  ci.lb = loo_tpa$ci.lb,
+  ci.ub = loo_tpa$ci.ub
+) %>%
+  mutate(study = fct_reorder(study, estimate))
+
+ggplot(loo_tpa_df, aes(x = estimate, y = study)) +
+  geom_vline(xintercept = exp(tpa_fe$beta), linetype = "dashed", color = "steelblue4", linewidth = 0.8) +
+  geom_point(size = 2.5, color = "steelblue4") +
+  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), height = 0.3, color = "steelblue4") +
+  geom_vline(xintercept = 1, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  labs(
+    title = "Analyse leave-one-out : Activité physique totale",
+    subtitle = "Ligne pointillée = RR poolé global",
+    x = "RR poolé (sans l'étude)",
+    y = NULL
+  )
+```
+
+**Ce que cela nous apprend :** Tous les points se regroupent étroitement autour du RR poolé global (ligne pointillée), et aucune estimation recalculée ne franchit le seuil de 1. Cela signifie qu'aucune étude individuelle ne détermine le résultat APT : même si l'on retirait n'importe quelle étude, l'association protectrice resterait statistiquement significative.
+
+### Leave-one-out : APL
+
+```{r loo-ltpa, fig.height=8}
+loo_ltpa <- leave1out(ltpa_re, transf = exp)
+
+loo_ltpa_df <- data.frame(
+  study = ltpa$study_label,
+  estimate = loo_ltpa$estimate,
+  ci.lb = loo_ltpa$ci.lb,
+  ci.ub = loo_ltpa$ci.ub
+) %>%
+  mutate(study = fct_reorder(study, estimate))
+
+ggplot(loo_ltpa_df, aes(x = estimate, y = study)) +
+  geom_vline(xintercept = exp(ltpa_re$beta), linetype = "dashed", color = "darkgreen", linewidth = 0.8) +
+  geom_point(size = 2.5, color = "darkgreen") +
+  geom_errorbarh(aes(xmin = ci.lb, xmax = ci.ub), height = 0.3, color = "darkgreen") +
+  geom_vline(xintercept = 1, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  labs(
+    title = "Analyse leave-one-out : Activité physique de loisir",
+    subtitle = "Ligne pointillée = RR poolé global",
+    x = "RR poolé (sans l'étude)",
+    y = NULL
+  )
+```
+
+**Ce que cela nous apprend :** L'estimation poolée APL est également stable à travers toutes les itérations leave-one-out. Malgré l'hétérogénéité substantielle observée précédemment (I² ≈ 68 %), aucune étude individuelle n'est responsable du résultat global. L'association protectrice est robuste à l'exclusion de n'importe quelle étude individuelle.
+
+### Méta-analyse cumulative
+
+La méta-analyse cumulative ajoute les études une à une (ordonnées par année de publication) et montre comment l'estimation poolée a évolué au fil du temps. Cela permet de déterminer si l'évidence s'est stabilisée ou a évolué.
+
+```{r cumulative-tpa, fig.height=6}
+tpa_sorted <- tpa %>% arrange(year)
+tpa_cum <- rma(yi = log_rr, sei = se, data = tpa_sorted, method = "FE",
+               slab = study_label)
+cum_tpa <- cumul(tpa_cum, transf = exp)
+
+cum_tpa_df <- data.frame(
+  study = tpa_sorted$study_label,
+  estimate = cum_tpa$estimate,
+  ci.lb = cum_tpa$ci.lb,
+  ci.ub = cum_tpa$ci.ub
+) %>%
+  mutate(study = factor(study, levels = study))
+
+ggplot(cum_tpa_df, aes(x = study, y = estimate)) +
+  geom_hline(yintercept = 1, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  geom_point(size = 2.5, color = "steelblue4") +
+  geom_errorbar(aes(ymin = ci.lb, ymax = ci.ub), width = 0.3, color = "steelblue4") +
+  coord_flip() +
+  labs(
+    title = "Méta-analyse cumulative : Activité physique totale",
+    subtitle = "Ordonnée par année de publication",
+    y = "RR poolé cumulé",
+    x = NULL
+  )
+```
+
+```{r cumulative-ltpa, fig.height=8}
+ltpa_sorted <- ltpa %>% arrange(year)
+ltpa_cum <- rma(yi = log_rr, sei = se, data = ltpa_sorted, method = "REML",
+                slab = study_label)
+cum_ltpa <- cumul(ltpa_cum, transf = exp)
+
+cum_ltpa_df <- data.frame(
+  study = ltpa_sorted$study_label,
+  estimate = cum_ltpa$estimate,
+  ci.lb = cum_ltpa$ci.lb,
+  ci.ub = cum_ltpa$ci.ub
+) %>%
+  mutate(study = factor(study, levels = study))
+
+ggplot(cum_ltpa_df, aes(x = study, y = estimate)) +
+  geom_hline(yintercept = 1, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  geom_point(size = 2.5, color = "darkgreen") +
+  geom_errorbar(aes(ymin = ci.lb, ymax = ci.ub), width = 0.3, color = "darkgreen") +
+  coord_flip() +
+  labs(
+    title = "Méta-analyse cumulative : Activité physique de loisir",
+    subtitle = "Ordonnée par année de publication",
+    y = "RR poolé cumulé",
+    x = NULL
+  )
+```
+
+**Ce que les analyses cumulatives nous apprennent :** Pour l'APT, l'estimation poolée est restée constamment inférieure à 1 depuis les premières études, et l'intervalle de confiance s'est resserré progressivement à mesure que de nouvelles études étaient ajoutées. Cela indique une base de preuves stable et en renforcement. Pour l'APL, le schéma est similaire : l'association protectrice est apparue tôt et est restée stable malgré l'ajout d'études aux résultats variés. Cette convergence au fil du temps est un indicateur fort que le résultat reflète un véritable effet plutôt qu'un artefact statistique.
+
+## Diagnostics d'influence {.tabset}
+
+Les graphiques ci-dessous affichent six mesures diagnostiques pour chaque étude, empilées verticalement. Chaque panneau a les noms des études sur l'axe horizontal et une statistique diagnostique différente sur l'axe vertical. Ensemble, ils répondent à la question : une étude individuelle influence-t-elle indûment le résultat global ?
+
+Les six panneaux sont :
+
+1. **rstudent** (résidus studentisés externalisés) : mesure à quel point le résultat de chaque étude s'écarte de l'estimation poolée calculée *sans* cette étude. Une valeur au-delà de ±2 signale une étude dont le résultat est atypique par rapport aux autres.
+2. **DFFITS** : mesure combien l'estimation poolée *change* lorsqu'une étude est retirée, exprimé en unités d'erreur-type. Une valeur élevée signifie que l'étude tire le résultat global vers elle de manière disproportionnée.
+3. **Distance de Cook** : similaire au DFFITS mais résume l'influence globale de chaque étude sur l'ensemble des paramètres du modèle. Une barre nettement plus haute que les autres signale une étude d'influence disproportionnée.
+4. **cov.r** (ratio de covariance) : mesure l'impact du retrait d'une étude sur la précision de l'estimation poolée. Une valeur proche de 1 signifie peu d'impact ; une valeur éloignée de 1 signifie que l'étude affecte substantiellement la largeur de l'intervalle de confiance.
+5. **tau².del** : la variance inter-études (τ²) recalculée après retrait de chaque étude. Si retirer une étude fait chuter τ² fortement, cette étude est une source majeure d'hétérogénéité.
+6. **QE.del** : la statistique Q de Cochran recalculée après retrait de chaque étude. Même logique : si Q baisse substantiellement, cette étude contribuait fortement à l'hétérogénéité.
+
+Une étude véritablement problématique apparaîtrait comme un point extrême sur *plusieurs* panneaux simultanément. Si aucune étude ne ressort de manière cohérente sur l'ensemble des panneaux, l'estimation poolée est robuste.
+
+### Études influentes : APT
+
+```{r influence-tpa, fig.height=8}
+inf_tpa <- influence(tpa_fe)
+plot(inf_tpa)
+```
+
+**APT :** Aucune étude n'apparaît comme un point extrême sur plusieurs panneaux simultanément. L'étude Murray et al. (2020) porte le plus de poids (visible sur le panneau hat value), ce qui est attendu compte tenu de sa grande taille d'échantillon, mais la retirer ne modifie pas fondamentalement l'estimation poolée (comme confirmé par l'analyse leave-one-out). Le résultat APT est robuste.
+
+### Études influentes : APL
+
+```{r influence-ltpa, fig.height=10}
+inf_ltpa <- influence(ltpa_re)
+plot(inf_ltpa)
+```
+
+**APL :** Malgré le plus grand nombre d'études et l'hétérogénéité substantielle (I² ≈ 68 %), aucune étude ne domine les diagnostics sur les six panneaux. Certaines études peuvent montrer un comportement d'outlier léger sur des mesures individuelles (ex. : résidus ou distance de Cook légèrement élevés), mais aucune n'est simultanément atypique, d'influence disproportionnée et source majeure d'hétérogénéité. Cela confirme que l'estimation poolée APL n'est pas déterminée par une seule étude et est robuste à la composition de la littérature incluse.
+
+# Synthèse des résultats
+
+```{r summary-visual, fig.height=5, fig.width=8}
+summary_df <- tibble(
+  Catégorie = c("APT (élevée vs. faible)", "APL (élevée vs. faible)",
+                "APP : Chômage", "APP : Debout",
+                "APP : Légère", "APP : Élevée"),
+  RR = c(exp(tpa_fe$beta), exp(ltpa_re$beta),
+         sapply(opa_results, function(x) exp(x$beta))),
+  IC_inf = c(exp(tpa_fe$ci.lb), exp(ltpa_re$ci.lb),
+             sapply(opa_results, function(x) exp(x$ci.lb))),
+  IC_sup = c(exp(tpa_fe$ci.ub), exp(ltpa_re$ci.ub),
+             sapply(opa_results, function(x) exp(x$ci.ub))),
+  Type = c("Protecteur", "Protecteur", "Risque", "Risque", "Non significatif", "Non significatif")
+) %>%
+  mutate(Catégorie = fct_rev(fct_inorder(Catégorie)))
+
+ggplot(summary_df, aes(x = RR, y = Catégorie, color = Type)) +
+  geom_vline(xintercept = 1, linetype = "solid", color = "grey50") +
+  geom_point(size = 3.5) +
+  geom_errorbarh(aes(xmin = IC_inf, xmax = IC_sup), height = 0.25) +
+  scale_color_manual(values = c("Protecteur" = "steelblue4",
+                                "Risque" = "firebrick",
+                                "Non significatif" = "grey50")) +
+  labs(
+    title = "Synthèse des estimations poolées : tous types d'AP",
+    x = "Risque relatif poolé (IC 95 %)",
+    y = NULL,
+    color = "Direction"
+  ) +
+  theme(legend.position = "right")
+```
+
+**Résultats de la réplication :**
+
+- **APT :** Un niveau élevé d'activité physique totale est associé à une réduction d'environ 22 % du risque de cancer du poumon (RR ≈ 0,78). L'estimation répliquée correspond étroitement au résultat publié.
+- **APL :** Un niveau élevé d'activité physique de loisir est associé à une réduction d'environ 12 % du risque (RR ≈ 0,88), avec une hétérogénéité substantielle (I² ≈ 68 %).
+- **APP :** Le chômage et les professions debout montrent un risque accru ; l'APP légère et élevée ne montrent pas d'association significative.
+
+**Apports des extensions :**
+
+- Les analyses leave-one-out confirment la stabilité des estimations poolées APT et APL ; aucune étude individuelle ne détermine le résultat global.
+- La méta-analyse cumulative montre que l'évidence pour l'APT s'est renforcée progressivement au fil du temps.
+- Les tests de biais de publication et les funnel plots sont globalement cohérents avec les résultats originaux.
+
+# Notes méthodologiques
+
+**Extraction des données :** Les données au niveau des études ont été extraites des forest plots publiés (Figures 2 et 4). Cette approche permet la réplication sans accès aux données individuelles, mais introduit une imprécision mineure due aux arrondis.
+
+**Logiciel :** Toutes les analyses ont été réalisées en R avec les packages `metafor` et `meta`. Le package `metafor` implémente les modèles à effets fixes et aléatoires (REML), le test Q de Cochran, la statistique I², les tests de Begg et d'Egger, le trim-and-fill et les diagnostics d'influence.
+
+**Limites :** Cette réplication utilise des données agrégées issues des figures publiées plutôt que des données individuelles. L'analyse dose-réponse (splines cubiques restreints) n'a pas été répliquée car elle nécessite des niveaux d'exposition et des effectifs par catégorie non entièrement disponibles dans les forest plots seuls.
+
+---
+
+*Dépôt du projet : [github.com/killianfoubert](https://github.com/killianfoubert)*
+
+```{r session-info}
+sessionInfo()
+```
