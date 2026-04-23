@@ -1,0 +1,22 @@
+study,year,gender,comparison,rr,ci_lower,ci_upper,weight
+"Steindorf et al.",2006,"M","unemployed",1.57,1.20,2.05,22.73
+"Steindorf et al.",2006,"W","unemployed",1.25,0.94,1.66,20.16
+"Bak et al.",2005,"M","unemployed",1.54,1.00,2.37,8.76
+"Bak et al.",2005,"W","unemployed",1.07,0.69,1.64,8.70
+"Colbert et al.",2002,"M","unemployed",1.27,1.04,1.56,39.66
+"Steindorf et al.",2006,"M","standing",1.35,1.02,1.79,39.55
+"Steindorf et al.",2006,"W","standing",1.14,0.83,1.57,30.79
+"Bak et al.",2005,"M","standing",1.66,1.06,2.61,15.41
+"Bak et al.",2005,"W","standing",1.71,1.07,2.73,14.26
+"Bak et al.",2005,"M","light",1.21,0.76,1.93,9.83
+"Bak et al.",2005,"W","light",1.24,0.76,2.01,9.02
+"Colbert et al.",2002,"M","light",1.01,0.81,1.27,42.19
+"Thune et al.",1997,"M","light",1.15,0.90,1.47,35.45
+"Thune et al.",1997,"W","light",0.81,0.37,1.76,3.51
+"Steindorf et al.",2006,"M","high",1.25,0.94,1.66,22.22
+"Steindorf et al.",2006,"W","high",1.09,0.76,1.56,13.90
+"Bak et al.",2005,"M","high",1.13,0.63,2.05,5.16
+"Bak et al.",2005,"W","high",1.80,0.75,4.31,2.35
+"Colbert et al.",2002,"M","high",1.23,0.95,1.59,27.09
+"Thune et al.",1997,"M","high",0.99,0.70,1.41,14.66
+"Severson et al.",1989,"M","high",0.88,0.62,1.25,14.62
