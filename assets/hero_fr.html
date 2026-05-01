@@ -1,0 +1,76 @@
+<div class="scroll-progress">
+  <div class="scroll-progress-bar" id="scrollProgressBar"></div>
+</div>
+
+<div class="report-hero">
+  <div class="lang-switch">
+    🇬🇧 <a href="index.html">English version</a>
+  </div>
+
+  <div class="hero-content">
+    <div class="hero-eyebrow">
+      Épidémiologie · Méta-analyse et synthèse de preuves
+    </div>
+
+    <h1 class="hero-title">
+      L'<em>activité physique</em><br>
+      protège-t-elle du cancer du poumon ?
+    </h1>
+
+    <p class="hero-subtitle">
+      Réplication et extension reproductibles de Qie et al. (2023), poolant les résultats de 42 études de cohorte sur l'association entre activité physique et incidence du cancer du poumon, avec diagnostics d'hétérogénéité et de biais de publication.
+    </p>
+
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="hero-stat-number">42</div>
+        <div class="hero-stat-label">Études de cohorte poolées par domaine d'activité</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-number">~10M</div>
+        <div class="hero-stat-label">Participants dans la base de preuves combinée</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-number">85 000+</div>
+        <div class="hero-stat-label">Cas de cancer du poumon incidents observés</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-number">−22 %</div>
+        <div class="hero-stat-label">Réduction de risque estimée avec activité totale élevée</div>
+      </div>
+    </div>
+
+    <div class="hero-meta">
+      <div class="hero-meta-item">
+        <span class="hero-meta-label">Auteur</span>
+        <span class="hero-meta-value">Killian Foubert, PhD</span>
+      </div>
+      <div class="hero-meta-item">
+        <span class="hero-meta-label">Méthodes</span>
+        <span class="hero-meta-value">Méta-analyse à effets aléatoires · Diagnostics</span>
+      </div>
+      <div class="hero-meta-item">
+        <span class="hero-meta-label">Stack</span>
+        <span class="hero-meta-value">R · metafor · meta</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero-scroll">Lire la suite</div>
+</div>
+
+<script>
+(function() {
+  function updateProgress() {
+    var bar = document.getElementById('scrollProgressBar');
+    if (!bar) return;
+    var scrollTop = window.scrollY || document.documentElement.scrollTop;
+    var height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    var pct = height > 0 ? (scrollTop / height) * 100 : 0;
+    bar.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  window.addEventListener('resize', updateProgress, { passive: true });
+  document.addEventListener('DOMContentLoaded', updateProgress);
+})();
+</script>

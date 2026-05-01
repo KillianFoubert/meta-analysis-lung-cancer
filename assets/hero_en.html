@@ -1,0 +1,76 @@
+<div class="scroll-progress">
+  <div class="scroll-progress-bar" id="scrollProgressBar"></div>
+</div>
+
+<div class="report-hero">
+  <div class="lang-switch">
+    🇫🇷 <a href="index_fr.html">Version française</a>
+  </div>
+
+  <div class="hero-content">
+    <div class="hero-eyebrow">
+      Epidemiology · Meta-Analysis &amp; Evidence Synthesis
+    </div>
+
+    <h1 class="hero-title">
+      Does <em>physical activity</em><br>
+      protect against lung cancer?
+    </h1>
+
+    <p class="hero-subtitle">
+      A reproducible replication and extension of Qie et al. (2023), pooling evidence from 42 cohort studies on the association between physical activity and lung cancer incidence, with diagnostics for heterogeneity and publication bias.
+    </p>
+
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="hero-stat-number">42</div>
+        <div class="hero-stat-label">Cohort studies pooled across PA domains</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-number">~10M</div>
+        <div class="hero-stat-label">Participants in the combined evidence base</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-number">85,000+</div>
+        <div class="hero-stat-label">Incident lung cancer cases observed</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-number">−22%</div>
+        <div class="hero-stat-label">Estimated risk reduction with high total PA</div>
+      </div>
+    </div>
+
+    <div class="hero-meta">
+      <div class="hero-meta-item">
+        <span class="hero-meta-label">Author</span>
+        <span class="hero-meta-value">Killian Foubert, PhD</span>
+      </div>
+      <div class="hero-meta-item">
+        <span class="hero-meta-label">Methods</span>
+        <span class="hero-meta-value">Random-effects meta-analysis · Diagnostics</span>
+      </div>
+      <div class="hero-meta-item">
+        <span class="hero-meta-label">Stack</span>
+        <span class="hero-meta-value">R · metafor · meta</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero-scroll">Scroll to read</div>
+</div>
+
+<script>
+(function() {
+  function updateProgress() {
+    var bar = document.getElementById('scrollProgressBar');
+    if (!bar) return;
+    var scrollTop = window.scrollY || document.documentElement.scrollTop;
+    var height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    var pct = height > 0 ? (scrollTop / height) * 100 : 0;
+    bar.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  window.addEventListener('resize', updateProgress, { passive: true });
+  document.addEventListener('DOMContentLoaded', updateProgress);
+})();
+</script>

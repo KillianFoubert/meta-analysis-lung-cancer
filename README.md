@@ -8,18 +8,23 @@ Study-level data were extracted visually from the published forest plots (Figure
 
 Reports are available in both **English** and **French**.
 
+## 📊 View the rendered reports
+
+- **English**: [meta_analysis_report_en.html](https://killianfoubert.github.io/meta-analysis-lung-cancer/meta_analysis_report_en.html)
+- **Français**: [meta_analysis_report_fr.html](https://killianfoubert.github.io/meta-analysis-lung-cancer/meta_analysis_report_fr.html)
+
 ## What this project demonstrates
 
-- **Data extraction** from published forest plots to reconstruct study-level datasets
-- **Meta-analysis** using inverse-variance weighted fixed-effects and random-effects (REML) models
-- **Heterogeneity assessment** (Cochran's Q, I² statistic)
-- **Publication bias diagnostics** (funnel plots with significance contours, Begg's rank test, Egger's regression, trim-and-fill correction)
-- **Sensitivity analyses** (leave-one-out influence analysis, cumulative meta-analysis by publication year, multi-panel influence diagnostics)
+* **Data extraction** from published forest plots to reconstruct study-level datasets
+* **Meta-analysis** using inverse-variance weighted fixed-effects and random-effects (REML) models
+* **Heterogeneity assessment** (Cochran's Q, I² statistic)
+* **Publication bias diagnostics** (funnel plots with significance contours, Begg's rank test, Egger's regression, trim-and-fill correction)
+* **Sensitivity analyses** (leave-one-out influence analysis, cumulative meta-analysis by publication year, multi-panel influence diagnostics)
 
 ## Key findings (replicated)
 
 | PA Type | Pooled RR | 95% CI | Interpretation |
-|---------|-----------|--------|----------------|
+| --- | --- | --- | --- |
 | Total PA (high vs. low) | 0.78 | 0.70–0.86 | 22% risk reduction |
 | Leisure-time PA (high vs. low) | 0.88 | 0.83–0.93 | 12% risk reduction |
 | Occupational PA (high vs. sitting) | 1.12 | 0.98–1.29 | No significant association |
@@ -27,13 +32,17 @@ Reports are available in both **English** and **French**.
 ## Project structure
 
 ```
-lung-cancer-meta-analysis/
+meta-analysis-lung-cancer/
 ├── README.md
 ├── lung-cancer-meta-analysis.Rproj
 ├── meta_analysis_report_en.Rmd       # Full analysis report (English)
 ├── meta_analysis_report_en.html      # Rendered report (English)
 ├── meta_analysis_report_fr.Rmd       # Full analysis report (French)
 ├── meta_analysis_report_fr.html      # Rendered report (French)
+├── assets/
+│   ├── styles.css                    # Editorial design styling
+│   ├── hero_en.html                  # English hero section
+│   └── hero_fr.html                  # French hero section
 └── data/
     ├── study_data_tpa.csv            # Total PA: extracted study data
     ├── study_data_ltpa.csv           # Leisure-time PA: extracted study data
@@ -42,12 +51,15 @@ lung-cancer-meta-analysis/
 
 ## How to reproduce
 
-1. Clone the repository: `git clone https://github.com/killianfoubert/lung-cancer-meta-analysis.git`
+1. Clone the repository: `git clone https://github.com/KillianFoubert/meta-analysis-lung-cancer.git`
 2. Open `lung-cancer-meta-analysis.Rproj` in RStudio (this sets the working directory automatically)
 3. Install required packages:
+
 ```r
-install.packages(c("meta", "metafor", "tidyverse", "knitr", "kableExtra", "gridExtra", "here"))
+install.packages(c("meta", "metafor", "tidyverse", "knitr", "kableExtra",
+                   "gridExtra", "here", "base64enc", "htmltools"))
 ```
+
 4. Open `meta_analysis_report_en.Rmd` (or `_fr.Rmd`) and click **Knit**
 
 ## Reference
@@ -57,8 +69,10 @@ Qie, R., Han, M., Huang, H., Sun, P., Xie, Y., He, J., & Zhang, Y. (2023). Physi
 ## Author
 
 **Killian Foubert, Ph.D.**
-- GitHub: [github.com/killianfoubert](https://github.com/killianfoubert)
-- LinkedIn: [linkedin.com/in/killianfoubert](https://linkedin.com/in/killianfoubert)
+
+* Portfolio: [killianfoubert.github.io](https://killianfoubert.github.io)
+* GitHub: [github.com/KillianFoubert](https://github.com/KillianFoubert)
+* LinkedIn: [linkedin.com/in/kfoubert](https://linkedin.com/in/kfoubert/)
 
 ## License
 
