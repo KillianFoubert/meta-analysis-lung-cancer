@@ -454,7 +454,7 @@ table caption {
   font-weight: 500;
   color: var(--color-text-soft);
   padding-bottom: 0.75rem;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-family: var(--font-body);
@@ -489,7 +489,7 @@ tbody tr:hover { background: rgba(196, 80, 46, 0.03); }
 /* Table notes (text below tables explaining context) */
 .table-note,
 .figure-note {
-  font-size: 0.92rem;
+  font-size: 1rem;
   color: var(--color-text-muted);
   font-style: italic;
   line-height: 1.55;
@@ -537,7 +537,7 @@ img {
   font-weight: 500;
   color: var(--color-text-soft);
   padding-bottom: 0.75rem;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-family: var(--font-body);
